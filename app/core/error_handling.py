@@ -1,52 +1,49 @@
-from fastapi import Request, status
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
+"""Error handling utilities for the application."""
+from enum import Enum
+from typing import Dict, Any, Optional
+import logging
 
-from .logging_config import get_logger
+class ErrorCode(Enum):
+    """Application error codes."""
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+    PROCESSING_ERROR = "PROCESSING_ERROR"
+    FILE_ERROR = "FILE_ERROR"
+    IMAGE_PROCESSING_ERROR = "IMAGE_PROCESSING_ERROR"
 
-logger = get_logger(__name__)
-
-async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-    logger.error(f"HTTPException: {exc.status_code} {exc.detail} for {request.method} {request.url.path}")
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail},
-    )
-
-async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
-    error_messages = []
-    for error in exc.errors():
-        field = ".".join(str(loc) for loc in error["loc"])
-        message = error["msg"]
-        error_messages.append(f"Field '{field}': {message}")
+class ApplicationError(Exception):
+    """Base application exception."""
     
-    logger.warning(f"RequestValidationError: {error_messages} for {request.method} {request.url.path} - Body: {await request.body()}")
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": "Validation Error", "errors": exc.errors()},
-    )
+    def __init__(self, message: str, error_code: ErrorCode, details: Optional[Dict[str, Any]] = None):
+        self.message = message
+        self.error_code = error_code
+        self.details = details or {}
+        super().__init__(self.message)
 
-async def pydantic_validation_exception_handler(request: Request, exc: ValidationError):
-    logger.warning(f"Pydantic ValidationError: {exc.errors()} for {request.method} {request.url.path}")
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": "Pydantic Validation Error", "errors": exc.errors()},
-    )
-
-async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.critical(f"Unhandled exception: {exc} for {request.method} {request.url.path}", exc_info=True)
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": "An unexpected internal server error occurred."},
-    )
+class ErrorHandler:
+    """Centralized error handling."""
+    
+    @staticmethod
+    def handle_error(error: Exception) -> Dict[str, Any]:
+        """Handle application errors consistently."""
+        logger = logging.getLogger(__name__)
+        
+        if isinstance(error, ApplicationError):
+            logger.error(f"Application error: {error.message}", extra=error.details)
+            return {
+                "error": error.error_code.value,
+                "message": error.message,
+                "details": error.details
+            }
+        else:
+            logger.error(f"Unexpected error: {str(error)}")
+            return {
+                "error": "INTERNAL_ERROR",
+                "message": "An unexpected error occurred",
+                "details": {}
+            }
 
 def register_exception_handlers(app):
-    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
-    app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
-    app.add_exception_handler(ValidationError, pydantic_validation_exception_handler)
-    app.add_exception_handler(Exception, unhandled_exception_handler)
-    logger.info("Custom exception handlers registered.")
-
-# The registration function should be called in the main application setup (app/__init__.py)
+    """Register exception handlers with the FastAPI application."""
+    # This function is a placeholder for FastAPI exception handlers
+    # For NiceGUI, we'll handle exceptions directly in the request handlers
+    pass
